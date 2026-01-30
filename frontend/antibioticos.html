@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Antibióticos</title>
+  
+  <link rel="stylesheet" href="/app.css" />
+<style>
+#bloqueRestarAntibiotico{display:none !important;}
+#bloqueListadoAntibioticos{display:block !important;}
+.nav-duplicado{display:none !important;}
+</style>
+</head>
+
+<body class="app">
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1>Antibióticos</h1>
+    </div>
+    <nav class="nav" aria-label="Navegación">
+      <div class="tabs">
+  <a href="/inicio.html" class="solo-admin">Configuración</a>
+          <a href="/salida.html">Salidas</a>
+          <a href="/view.html" class="solo-admin">Inventario</a>
+          <a href="/stock.html">Salida individual</a>
+          <a href="/antibioticos.html" class="active solo-admin">Antibióticos</a>
+          <a href="/menu.html">Menú</a>
+    
+</div>
+      <button class="btn btn-logout btn-logout btn-logout" data-logout onclick="logout()" data-logout>Salir</button>
+    </nav>
+  </div>
+</header>
+  
+
+  
+  
+
+<main class="container wide">
+  <div class="page stack">
+  <h1 class="page-title">Antibióticos</h1>
+<div class="grid">
+      <section class="card" id="bloqueRestarAntibiotico">
+        <div class="row nav-duplicado">
+          <button class="btn" onclick="location.href='/inicio.html'">← Configuración</button>
+          <button class="btn" onclick="location.href='/salida.html'">Salida</button>
+          <button class="btn" onclick="location.href='/view.html'">Inventario</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid #eef0f6; margin:12px 0;" />
+
+        <h3 style="margin:0 0 8px 0; font-size:14px;">Consumir (restar stock)</h3>
+        <label class="label" for="sel">Antibiótico</label>
+        <select id="sel" disabled><option>Cargando…</option></select>
+
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label class="label" for="qty">Cantidad a restar</label>
+            <input id="qty" type="number" min="1" step="1" value="1" />
+          </div>
+          <button id="btnRestar" class="btn btnPrimary" disabled>Restar</button>
+        </div>
+
+        <div class="muted" id="stockInfo">—</div>
+        <div class="msg" id="msgBox" style="display:none;"></div>
+
+        <div class="muted" style="margin-top:12px;">
+          Para ver y editar el listado completo de antibióticos, entra en <b>Antibióticos</b>.
+        </div>
+      </section>
+
+      <section class="card" id="bloqueListadoAntibioticos">
+        <div class="row">
+          <div style="flex:1;">
+            <label class="label" for="search">Buscar</label>
+            <input id="search" placeholder="Buscar por nombre o código…" disabled />
+          </div>
+          <button class="btn" id="reload" disabled>Recargar</button>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Antibiótico</th>
+              <th>Stock</th>
+              <th>Mínimo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+
+        <div class="muted" id="count">—</div>
+      </section>
+    </div>
+  </div>
+</main>
+
+  <script>
+    const API = "/api";
+    const sel = document.getElementById("sel");
+    const qty = document.getElementById("qty");
+    const btnRestar = document.getElementById("btnRestar");
+    const stockInfo = document.getElementById("stockInfo");
+    const msgBox = document.getElementById("msgBox");
+
+    const searchEl = document.getElementById("search");
+    const reloadBtn = document.getElementById("reload");
+    const tbody = document.getElementById("tbody");
+    const count = document.getElementById("count");
+
+    let antibioticos = [];
+
+    function showMsg(text, type="ok") {
+      msgBox.style.display = "block";
+      msgBox.className = "msg " + (type === "bad" ? "bad" : "ok");
+      msgBox.textContent = text;
+    }
+
+    function clearMsg() {
+      msgBox.style.display = "none";
+      msgBox.textContent = "";
+      msgBox.className = "msg";
+    }
+
+    function normalize(q){ return (q||"").trim().toUpperCase(); }
+
+    function currentAtb() {
+      const codigo = sel.value;
+      return antibioticos.find(a => a.codigo === codigo);
+    }
+
+    function renderStockInfo() {
+      const a = currentAtb();
+      if (!a) { stockInfo.textContent = "—"; return; }
+      const low = Number(a.cantidad) <= Number(a.stock_minimo);
+      stockInfo.innerHTML = `Stock actual: <b>${a.cantidad}</b> · Mínimo: <b>${a.stock_minimo}</b>` + (low ? ` · <span class="pillLow">BAJO MÍNIMO</span>` : "");
+    }
+
+    function renderTable() {
+      const q = normalize(searchEl.value);
+      const filtered = antibioticos.filter(a => !q || a.codigo.includes(q) || (a.nombre||"").toUpperCase().includes(q));
+      count.textContent = `Mostrando ${filtered.length} antibiótico(s).`;
+
+      tbody.innerHTML = "";
+      for (const a of filtered) {
+        const tr = document.createElement("tr");
+        const low = Number(a.cantidad) <= Number(a.stock_minimo);
+
+        tr.innerHTML = `
+          <td class="code">${a.codigo}</td>
+          <td>${a.nombre} ${low ? '<span class="pillLow" title="Stock bajo o igual al mínimo">BAJO</span>' : ''}</td>
+          <td><input class="num" type="number" min="0" step="1" value="${a.cantidad}" data-field="cantidad" data-codigo="${a.codigo}"></td>
+          <td><input class="num" type="number" min="0" step="1" value="${a.stock_minimo}" data-field="stock_minimo" data-codigo="${a.codigo}"></td>
+          <td><button class="btn" data-action="save" data-codigo="${a.codigo}">Guardar</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function fetchJson(url, options) {
+      const r = await fetch(url, options);
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      if (!r.ok) throw new Error(typeof data === "string" ? data : (data.error || JSON.stringify(data)));
+      return data;
+    }
+
+    async function loadAntibioticos() {
+      clearMsg();
+      const data = await fetchJson(`${API}/antibioticos`);
+      antibioticos = Array.isArray(data) ? data : [];
+
+      // Dropdown
+      sel.innerHTML = antibioticos.map(a => `<option value="${a.codigo}">${a.nombre} (${a.codigo})</option>`).join("") || "<option value=\"\">(sin datos)</option>";
+      sel.disabled = !antibioticos.length;
+      btnRestar.disabled = !antibioticos.length;
+      searchEl.disabled = !antibioticos.length;
+      reloadBtn.disabled = !antibioticos.length;
+
+      renderStockInfo();
+      renderTable();
+    }
+
+    sel.addEventListener("change", () => { clearMsg(); renderStockInfo(); });
+    searchEl.addEventListener("input", renderTable);
+    reloadBtn.addEventListener("click", () => loadAntibioticos().catch(() => showMsg("No se pudo recargar.", "bad")));
+
+    btnRestar.addEventListener("click", async () => {
+      clearMsg();
+      const a = currentAtb();
+      if (!a) return;
+      const n = Number(qty.value);
+      if (!Number.isInteger(n) || n <= 0) {
+        showMsg("La cantidad debe ser un entero mayor que 0.", "bad");
+        return;
+      }
+
+      btnRestar.disabled = true;
+      try {
+        const data = await fetchJson(`${API}/antibioticos/${encodeURIComponent(a.codigo)}/restar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cantidad: n })
+        });
+
+        const updated = data.item;
+        const idx = antibioticos.findIndex(x => x.codigo === updated.codigo);
+        if (idx >= 0) antibioticos[idx] = updated;
+
+        showMsg(`OK. Nuevo stock: ${updated.cantidad}`, "ok");
+        renderStockInfo();
+        renderTable();
+      } catch (e) {
+        // Si es stock insuficiente el backend responde 409 con JSON. Aquí lo mostramos genérico.
+        showMsg(String(e.message || e), "bad");
+      } finally {
+        btnRestar.disabled = !antibioticos.length;
+      }
+    });
+
+    tbody.addEventListener("click", async (ev) => {
+      const btn = ev.target?.closest("button[data-action='save']");
+      if (!btn) return;
+
+      clearMsg();
+      const codigo = btn.getAttribute("data-codigo");
+      const inputs = Array.from(tbody.querySelectorAll(`input[data-codigo='${CSS.escape(codigo)}']`));
+      const payload = {};
+      for (const inp of inputs) {
+        const field = inp.getAttribute("data-field");
+        const n = Number(inp.value);
+        if (!Number.isInteger(n) || n < 0) {
+          showMsg(`${field} debe ser un entero >= 0`, "bad");
+          return;
+        }
+        payload[field] = n;
+      }
+
+      btn.disabled = true;
+      try {
+        const data = await fetchJson(`${API}/antibioticos/${encodeURIComponent(codigo)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const updated = data.item;
+        const idx = antibioticos.findIndex(x => x.codigo === updated.codigo);
+        if (idx >= 0) antibioticos[idx] = updated;
+        showMsg("Guardado.", "ok");
+        renderStockInfo();
+        renderTable();
+      } catch (e) {
+        showMsg(String(e.message || e), "bad");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadAntibioticos().catch(() => showMsg("No se pudieron cargar los antibióticos.", "bad"));
+  </script>
+
+<script>
+(function() {
+  const role = sessionStorage.getItem('almacen_role');
+  if (!role) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const allowed = ["admin"];
+  if (!allowed.includes(role)) {
+    window.location.href = '/menu.html';
+    return;
+  }
+  if (role !== 'admin') {
+    document.querySelectorAll('.solo-admin').forEach(el => el.style.display='none');
+  }
+})();
+</script>
+
+
+<script>
+function logout() {
+  sessionStorage.removeItem('almacen_user');
+  sessionStorage.removeItem('almacen_role');
+  window.location.href = '/index.html';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>

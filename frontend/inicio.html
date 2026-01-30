@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Configuración de antibiogramas</title>
+  <link rel="stylesheet" href="/app.css" />
+
+  <style>
+    /* Complementos mínimos (no rompe app.css) */
+    select.select { width: 100%; }
+    .msg.ok { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.10); }
+    .msg.bad { border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.10); }
+  </style>
+</head>
+
+<body class="app">
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1>Configuración</h1>
+    </div>
+    <nav class="nav" aria-label="Navegación">
+      <div class="tabs">
+        <a href="/inicio.html" class="active solo-admin">Configuración</a>
+        <a href="/salida.html">Salidas</a>
+        <a href="/view.html" class="solo-admin">Inventario</a>
+        <a href="/stock.html">Salida individual</a>
+        <a href="/antibioticos.html" class="solo-admin">Antibióticos</a>
+          <a href="/menu.html">Menú</a>
+      </div>
+    
+      <button class="btn btn-logout btn-logout btn-logout" data-logout onclick="logout()" data-logout>Salir</button>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page stack">
+    <h1 class="page-title">Configurar Antibiogramas</h1>
+
+    <section class="card pad stack">
+      <div class="row" style="align-items:flex-end; gap:12px;">
+        <div style="flex:1; min-width: 260px;">
+          <label class="label" for="abSel">Selecciona antibiograma</label>
+          <select id="abSel" class="select" disabled></select>
+        </div>
+        <button class="btn" id="reload" disabled>Recargar</button>
+      </div>
+
+      <div class="row" style="align-items:flex-end; gap:12px;">
+        <div style="flex:1; min-width: 260px;">
+          <label class="label" for="search">Buscar antibiótico</label>
+          <input id="search" placeholder="Buscar por nombre o código…" disabled />
+        </div>
+        <button class="btn primary" id="save" disabled>Guardar configuración</button>
+      </div>
+
+      <div class="muted" id="hint">
+        Marca los antibióticos que pertenecen al antibiograma seleccionado y pulsa <b>Guardar</b>.
+      </div>
+
+      <div class="grid-2" style="gap:14px;">
+        <div class="card pad" style="overflow:auto; max-height: 520px;">
+          <div class="muted" style="margin:0 0 10px 0;">Lista de antibióticos</div>
+          <div id="list" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <div class="card pad" style="overflow:auto; max-height: 520px;">
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div class="muted" style="margin:0;">Asignados (detalle)</div>
+            <div class="pill" id="countPill">0</div>
+          </div>
+          <div class="muted" id="detailMsg" style="margin-top:10px;">Selecciona un antibiograma…</div>
+          <table id="detailTable" style="display:none; margin-top:10px;">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Antibiótico</th>
+                <th>Cantidad</th>
+                <th>Mínimo</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="msg" id="msg" style="display:none;"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+  const el = (id) => document.getElementById(id);
+
+  const abSel = el("abSel");
+  const reloadBtn = el("reload");
+  const search = el("search");
+  const saveBtn = el("save");
+  const list = el("list");
+  const msg = el("msg");
+  const detailMsg = el("detailMsg");
+  const detailTable = el("detailTable");
+  const detailBody = detailTable.querySelector("tbody");
+  const countPill = el("countPill");
+
+  let antibioticos = [];      // [{codigo, nombre, cantidad, stock_minimo}]
+  let antibiogramas = [];     // [{id, nombre}]
+  let selectedCodes = new Set();
+  let currentAbId = null;
+// Auto-guardado (debounce) para no perder cambios
+let _saveTimer = null;
+let _saving = false;
+
+async function saveConfig({ silent = false } = {}) {
+  if (!currentAbId) return;
+  if (_saving) return;
+  _saving = true;
+  try {
+    const codes = Array.from(selectedCodes);
+    await api(`/api/antibiogramas/${currentAbId}/antibioticos`, {
+      method: "PUT",
+      body: JSON.stringify({ codes }),
+    });
+    if (!silent) showMsg("Configuración guardada.", "ok");
+    else {
+      // Mensaje discreto
+      msg.style.display = "block";
+      msg.className = "msg ok";
+      msg.textContent = "Guardado automático.";
+      setTimeout(() => { msg.style.display = "none"; }, 1200);
+    }
+    const det = await api(`/api/antibiogramas/${currentAbId}/antibioticos_detalle`).catch(() => []);
+    renderDetail(det);
+  } catch (e) {
+    showMsg(String(e.message || e), "bad");
+  } finally {
+    _saving = false;
+  }
+}
+
+function scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => saveConfig({ silent: true }), 600);
+}
+
+  function showMsg(text, kind="ok") {
+    msg.style.display = "block";
+    msg.className = "msg " + (kind === "bad" ? "bad" : "ok");
+    msg.textContent = text;
+  }
+  function hideMsg() { msg.style.display = "none"; }
+
+  async function api(url, opts) {
+    const token = sessionStorage.getItem("token");
+    const auth = token ? { "Authorization": "Bearer " + token } : {};
+    const res = await fetch(url, { ...opts, headers: { "Content-Type": "application/json", ...auth, ...(opts?.headers||{}) }});
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (!res.ok) {
+      let errText = "";
+      if (ct.includes("application/json")) {
+        const j = await res.json().catch(() => ({}));
+        errText = j?.error || j?.message || JSON.stringify(j);
+      } else {
+        errText = await res.text().catch(() => "");
+      }
+      throw new Error(errText || ("HTTP " + res.status));
+    }
+    return ct.includes("application/json") ? res.json() : res.text();
+  }
+
+  function norm(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, ""); }
+
+  function renderList() {
+    const q = norm(search.value).trim();
+    const items = antibioticos
+      .filter(a => !q || norm(a.nombre).includes(q) || norm(a.codigo).includes(q))
+      .sort((a,b) => a.nombre.localeCompare(b.nombre, "es"));
+
+    list.innerHTML = "";
+    for (const a of items) {
+      const id = "cb_" + a.codigo.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const wrap = document.createElement("label");
+      wrap.className = "row";
+      wrap.style.gap = "10px";
+      wrap.style.alignItems = "center";
+      wrap.style.cursor = "pointer";
+      wrap.style.flexWrap = "nowrap";
+      wrap.style.alignItems = "center";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = id;
+      cb.style.marginTop = "0";
+      cb.style.alignSelf = "center";
+      cb.checked = selectedCodes.has(a.codigo);
+      
+cb.addEventListener("change", () => {
+        if (cb.checked) selectedCodes.add(a.codigo);
+        else selectedCodes.delete(a.codigo);
+        countPill.textContent = String(selectedCodes.size);
+        scheduleSave();
+      });
+const text = document.createElement("div");
+      text.style.flex = "1";
+      text.style.minWidth = "0";
+      text.innerHTML = `<div style="font-weight:700">${a.nombre}</div><div class="muted" style="font-size:12px">Código: ${a.codigo}</div>`;
+
+      wrap.appendChild(cb);
+      wrap.appendChild(text);
+      list.appendChild(wrap);
+    }
+    countPill.textContent = String(selectedCodes.size);
+  }
+
+  function renderDetail(rows) {
+    if (!rows || rows.length === 0) {
+      detailTable.style.display = "none";
+      detailMsg.style.display = "block";
+      detailMsg.textContent = "No hay antibióticos asignados a este antibiograma.";
+      return;
+    }
+    detailMsg.style.display = "none";
+    detailTable.style.display = "";
+    detailBody.innerHTML = "";
+    for (const r of rows) {
+      const low = Number(r.cantidad) <= Number(r.stock_minimo);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="code">${r.codigo}</td>
+        <td>${r.nombre} ${low ? '<span class="pillLow" title="Stock bajo o igual al mínimo">BAJO</span>' : ''}</td>
+        <td>${Number(r.cantidad)}</td>
+        <td>${Number(r.stock_minimo)}</td>
+      `;
+      detailBody.appendChild(tr);
+    }
+  }
+
+  async function loadBase() {
+    hideMsg();
+    abSel.disabled = true;
+    reloadBtn.disabled = true;
+    search.disabled = true;
+    saveBtn.disabled = true;
+
+    // Cargar base
+    antibiogramas = await api("/api/antibiogramas");
+    antibioticos = await api("/api/antibioticos");
+
+    // Rellenar selector
+    abSel.innerHTML = `<option value="">— Selecciona —</option>` + antibiogramas
+      .map(a => `<option value="${a.id}">${a.nombre}</option>`)
+      .join("");
+
+    abSel.disabled = false;
+    reloadBtn.disabled = false;
+    search.disabled = false;
+
+    // Si hay uno seleccionado, recargar su config; si no, limpia
+    if (currentAbId) {
+      abSel.value = String(currentAbId);
+      await loadForAb(currentAbId);
+    } else {
+      selectedCodes = new Set();
+      renderList();
+      renderDetail([]);
+      detailMsg.style.display = "block";
+      detailMsg.textContent = "Selecciona un antibiograma…";
+    }
+  }
+
+  async function loadForAb(id) {
+    hideMsg();
+    currentAbId = id;
+    saveBtn.disabled = true;
+
+    const rows = await api(`/api/antibiogramas/${id}/antibioticos`);
+    // El backend devuelve un array de códigos (strings). Aceptamos ambos formatos
+    // por compatibilidad: ["412219", ...] o [{codigo:"412219"}, ...]
+    selectedCodes = new Set(
+      (rows || []).map(r => (typeof r === "string" ? r : r?.codigo)).filter(Boolean)
+    );
+
+    renderList();
+    countPill.textContent = String(selectedCodes.size);
+
+    // detalle con stock
+    const det = await api(`/api/antibiogramas/${id}/antibioticos_detalle`).catch(() => []);
+    renderDetail(det);
+
+    saveBtn.disabled = false;
+  }
+
+  abSel.addEventListener("change", async () => {
+    const id = Number(abSel.value);
+    if (!id) {
+      currentAbId = null;
+      selectedCodes = new Set();
+      renderList();
+      renderDetail([]);
+      detailMsg.style.display = "block";
+      detailMsg.textContent = "Selecciona un antibiograma…";
+      saveBtn.disabled = true;
+      return;
+    }
+    try {
+      await loadForAb(id);
+    } catch (e) {
+      showMsg(String(e.message || e), "bad");
+    }
+  });
+
+  search.addEventListener("input", () => renderList());
+
+  reloadBtn.addEventListener("click", async () => {
+    reloadBtn.disabled = true;
+    try { await loadBase(); }
+    catch (e) { showMsg(String(e.message || e), "bad"); }
+    finally { reloadBtn.disabled = false; }
+  });
+
+  
+saveBtn.addEventListener("click", async () => {
+  if (!currentAbId) return;
+  saveBtn.disabled = true;
+  try {
+    await saveConfig({ silent: false });
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+
+  // Arranque
+  loadBase().catch(e => showMsg("No se pudo cargar. " + String(e.message || e), "bad"));
+</script>
+
+<script>
+(function() {
+  const role = sessionStorage.getItem('almacen_role');
+  if (!role) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const allowed = ["admin"];
+  if (!allowed.includes(role)) {
+    window.location.href = '/menu.html';
+    return;
+  }
+  if (role !== 'admin') {
+    document.querySelectorAll('.solo-admin').forEach(el => el.style.display='none');
+  }
+})();
+</script>
+
+
+<script>
+function logout() {
+  sessionStorage.removeItem('almacen_user');
+  sessionStorage.removeItem('almacen_role');
+  window.location.href = '/index.html';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>

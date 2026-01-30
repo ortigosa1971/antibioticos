@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Acceso — Inmaculada</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="login-page">
+
+  <div class="login-card">
+
+    <div class="login-header">
+      <div class="login-logo">
+        <img src="andalucia.png" alt="Junta de Andalucía">
+      </div>
+      <h1>Hospital La Inmaculada</h1>
+      <h2>Gestión de Antibióticos</h2>
+    </div>
+
+    <div class="login-form">
+      <label for="usuario">Usuario</label>
+      <input type="text" id="usuario" placeholder="Usuario" autocomplete="off">
+
+      <button class="primary" onclick="login()">Entrar</button>
+
+      <div id="error" class="status bad" style="display:none;">Usuario no permitido</div>
+    </div>
+
+  </div>
+
+<script>
+function login() {
+  const user = document.getElementById('usuario').value.trim().toLowerCase();
+  // Usuarios permitidos (sin password, como está ahora)
+  if (user === 'admin') {
+    sessionStorage.setItem('almacen_user', 'admin');
+    sessionStorage.setItem('almacen_role', 'admin');
+    window.location.href = 'menu.html';
+    return;
+  }
+  if (user === 'tecnico') {
+    sessionStorage.setItem('almacen_user', 'tecnico');
+    sessionStorage.setItem('almacen_role', 'tecnico');
+    window.location.href = 'menu.html';
+    return;
+  }
+  document.getElementById('error').style.display = 'block';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>

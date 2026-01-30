@@ -1,0 +1,31 @@
+# deps
+node_modules
+backend/node_modules
+
+# git
+.git
+.gitignore
+
+# env
+.env
+backend/.env
+
+# logs
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+
+# archives / backups
+*.zip
+*.tar
+*.gz
+*.7z
+
+# misc
+*.log

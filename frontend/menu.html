@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Menú</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body class="app">
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1>Menú</h1>
+    </div>
+    <nav class="nav" aria-label="Navegación">
+      <div class="tabs">
+  <a href="/inicio.html" class="solo-admin">Configuración</a>
+      <a href="/salida.html">Salidas</a>
+      <a href="/view.html" class="solo-admin">Inventario</a>
+      <a href="/stock.html">Salida individual</a>
+      <a href="/antibioticos.html" class="solo-admin">Antibióticos</a>
+          <a href="/menu.html" class="active">Menú</a>
+    
+</div>
+      <button class="btn btn-logout btn-logout btn-logout" data-logout onclick="logout()" data-logout>Salir</button>
+    </nav>
+  </div>
+</header>
+
+<main class="container narrow">
+  <div class="page stack">
+  <h1 class="page-title">Menú</h1>
+<section class="card pad">
+    <p class="muted" style="margin-top:0">
+      Acceso rápido a las pantallas principales.
+    </p>
+
+    <div class="grid-2" style="margin-top:12px">
+      <a class="card pad solo-admin" href="/inicio.html" style="text-decoration:none;color:inherit">
+        <div style="font-weight:800">Configuración</div>
+        <div class="muted">Gestiona los antibióticos por antibiograma.</div>
+      </a>
+
+      <a class="card pad" href="/salida.html" style="text-decoration:none;color:inherit">
+        <div style="font-weight:800">Salidas</div>
+        <div class="muted">Registrar y consultar salidas.</div>
+      </a>
+
+      <a class="card pad solo-admin" href="/view.html" style="text-decoration:none;color:inherit">
+        <div style="font-weight:800">Inventario</div>
+        <div class="muted">Consulta de inventario.</div>
+      </a>
+
+      <a class="card pad solo-admin" href="/antibioticos.html" style="text-decoration:none;color:inherit">
+        <div style="font-weight:800">Antibióticos</div>
+        <div class="muted">Listado completo y edición de stock/mínimos.</div>
+      </a>
+
+      <a class="card pad" href="/stock.html" style="text-decoration:none;color:inherit">
+        <div style="font-weight:800">Salida individual de antibióticos</div>
+        <div class="muted">Registro manual de salida por antibiótico.</div>
+      </a>
+    </div>
+  </section>
+  </div>
+</main>
+
+<script>
+(function() {
+  const role = sessionStorage.getItem('almacen_role');
+  if (!role) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const allowed = ["admin", "tecnico"];
+  if (!allowed.includes(role)) {
+    window.location.href = '/menu.html';
+    return;
+  }
+  if (role !== 'admin') {
+    document.querySelectorAll('.solo-admin').forEach(el => el.style.display='none');
+  }
+})();
+</script>
+
+
+<script>
+function logout() {
+  sessionStorage.removeItem('almacen_user');
+  sessionStorage.removeItem('almacen_role');
+  window.location.href = '/index.html';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>

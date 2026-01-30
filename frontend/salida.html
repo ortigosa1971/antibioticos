@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Salida de antibiogramas</title>
+  
+  <link rel="stylesheet" href="/app.css" />
+</head>
+
+<body class="app">
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1>Salidas</h1>
+    </div>
+    <nav class="nav" aria-label="Navegación">
+      <div class="tabs">
+  <a href="/inicio.html" class="solo-admin">Configuración</a>
+          <a href="/salida.html" class="active">Salidas</a>
+          <a href="/view.html" class="solo-admin">Inventario</a>
+          <a href="/stock.html">Salida individual</a>
+          <a href="/antibioticos.html" class="solo-admin">Antibióticos</a>
+          <a href="/menu.html">Menú</a>
+    
+</div>
+      <button class="btn btn-logout" data-logout onclick="logout()">Salir</button>
+    </nav>
+  </div>
+</header>
+  
+
+  
+  
+
+<main class="container wide">
+  <div class="page stack">
+  <h1 class="page-title">Salida de antibiogramas</h1>
+<section class="card">
+      <div class="row">
+        <div>
+          <label for="abg">Antibiograma</label>
+          <select id="abg" disabled>
+            <option value="">Cargando…</option>
+          </select>
+        </div>
+        <div>
+          <label for="unidades">Unidades (salida)</label>
+          <input id="unidades" type="number" min="1" step="1" value="1" disabled />
+        </div>
+        <div>
+          <button class="primary" id="btn" disabled>Registrar salida</button>
+        </div>
+      </div>
+
+      <div class="muted">
+        Al registrar la salida, el sistema descuenta automáticamente del stock <b>todos los antibióticos asignados</b> al antibiograma.
+        Si alguno no tiene stock suficiente, la operación se cancela.
+      </div>
+
+      <div class="status" id="status">Estado: <span id="statusText">Cargando…</span></div>
+
+      <div class="nav nav-duplicado">
+        <button class="ghost" type="button" onclick="location.href='/menu.html'">Menú</button>
+        <button class="ghost" type="button" onclick="location.href='/view.html'">Inventario</button>
+        <button class="ghost" type="button" onclick="location.href='/stock.html'">Salida individual</button>
+      </div>
+
+      <div id="previewWrap"></div>
+    </section>
+  </div>
+</main>
+
+  <script>
+    const API = '/api';
+    const abg = document.getElementById('abg');
+    const unidades = document.getElementById('unidades');
+    const btn = document.getElementById('btn');
+    const statusBox = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const previewWrap = document.getElementById('previewWrap');
+
+    function setStatus(msg, type='neutral') {
+      statusText.textContent = msg;
+      statusBox.classList.remove('ok','bad');
+      if (type==='ok') statusBox.classList.add('ok');
+      if (type==='bad') statusBox.classList.add('bad');
+    }
+
+    async function fetchJson(url, opts) {
+      const r = await fetch(url, opts);
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      if (!r.ok) {
+        const err = typeof data === 'string' ? data : (data.error || JSON.stringify(data));
+        const e = new Error(err);
+        e.data = data;
+        e.status = r.status;
+        throw e;
+      }
+      return data;
+    }
+
+    function renderPreview(items) {
+      if (!items || !items.length) {
+        previewWrap.innerHTML = '';
+        return;
+      }
+
+      const n = Number(unidades.value) || 1;
+      const rows = items.map(it => {
+        const quedaria = it.cantidad - n;
+        const low = quedaria <= it.stock_minimo;
+        return `
+          <tr>
+            <td><span class="pill">${it.codigo}</span></td>
+            <td>${it.nombre}</td>
+            <td>${it.cantidad}</td>
+            <td>${it.stock_minimo}</td>
+            <td>${quedaria}</td>
+            <td>${low ? '<span class="pill low">BAJO</span>' : ''}</td>
+          </tr>
+        `;
+      }).join('');
+
+      previewWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Antibiótico</th>
+              <th>Stock</th>
+              <th>Mínimo</th>
+              <th>Quedaría</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    let currentDetalle = [];
+
+    async function loadDetalle() {
+      const id = Number(abg.value);
+      previewWrap.innerHTML = '';
+      currentDetalle = [];
+      if (!id) {
+        setStatus('Selecciona un antibiograma.', 'ok');
+        btn.disabled = true;
+        return;
+      }
+      try {
+        setStatus('Cargando antibióticos del antibiograma…');
+        const items = await fetchJson(`${API}/antibiogramas/${id}/antibioticos_detalle`);
+        currentDetalle = Array.isArray(items) ? items : [];
+        if (!currentDetalle.length) {
+          setStatus('Este antibiograma no tiene antibióticos asignados.', 'bad');
+          btn.disabled = true;
+          return;
+        }
+        setStatus('Listo. Revisa y registra la salida.', 'ok');
+        btn.disabled = false;
+        renderPreview(currentDetalle);
+      } catch (e) {
+        console.error(e);
+        setStatus('Error cargando el detalle. Revisa /api/dbcheck o logs.', 'bad');
+        btn.disabled = true;
+      }
+    }
+
+    unidades.addEventListener('input', () => renderPreview(currentDetalle));
+    abg.addEventListener('change', () => loadDetalle());
+
+    btn.addEventListener('click', async () => {
+      const id = Number(abg.value);
+      const n = Number(unidades.value);
+      if (!Number.isInteger(n) || n <= 0) {
+        setStatus('Unidades debe ser un entero > 0.', 'bad');
+        return;
+      }
+      btn.disabled = true;
+      try {
+        setStatus('Registrando salida…');
+        const out = await fetchJson(`${API}/salidas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ antibiograma_id: id, unidades: n })
+        });
+
+        // Refrescar preview con lo que ha quedado
+        currentDetalle = out.afectados || [];
+        setStatus(`OK. Salida registrada. Unidades: ${n}.`, 'ok');
+        renderPreview(currentDetalle);
+      } catch (e) {
+        console.error(e);
+        if (e.status === 409 && e.data && e.data.faltan) {
+          const names = e.data.faltan.map(x => `${x.nombre} (stock ${x.cantidad}, necesita ${x.necesario})`).join(' · ');
+          setStatus(`No se puede registrar: stock insuficiente. ${names}`, 'bad');
+        } else {
+          setStatus(`Error: ${e.message}`, 'bad');
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function init() {
+      try {
+        setStatus('Cargando antibiogramas…');
+        const abgs = await fetchJson(`${API}/antibiogramas`);
+        abg.innerHTML = `<option value="">— Selecciona —</option>` + (abgs || [])
+          .map(a => `<option value="${a.id}">${a.nombre}</option>`)
+          .join('');
+        abg.disabled = false;
+        unidades.disabled = false;
+        setStatus('Selecciona un antibiograma.', 'ok');
+      } catch (e) {
+        console.error(e);
+        setStatus('Error cargando antibiogramas. Revisa /api/dbcheck o logs.', 'bad');
+      }
+    }
+
+    init();
+  </script>
+
+<script>
+(function() {
+  const role = sessionStorage.getItem('almacen_role');
+  if (!role) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const allowed = ["admin", "tecnico"];
+  if (!allowed.includes(role)) {
+    window.location.href = '/menu.html';
+    return;
+  }
+  if (role !== 'admin') {
+    document.querySelectorAll('.solo-admin').forEach(el => el.style.display='none');
+  }
+})();
+</script>
+
+
+<script>
+function logout() {
+  sessionStorage.removeItem('almacen_user');
+  sessionStorage.removeItem('almacen_role');
+  window.location.href = '/index.html';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>

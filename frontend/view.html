@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventario de antibióticos</title>
+  
+  <link rel="stylesheet" href="/app.css" />
+</head>
+
+<body class="app">
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1>Inventario</h1>
+    </div>
+    <nav class="nav" aria-label="Navegación">
+      <div class="tabs">
+  <a href="/inicio.html" class="solo-admin">Configuración</a>
+          <a href="/salida.html">Salidas</a>
+          <a href="/view.html" class="active solo-admin">Inventario</a>
+          <a href="/stock.html">Salida individual</a>
+          <a href="/antibioticos.html" class="solo-admin">Antibióticos</a>
+          <a href="/menu.html">Menú</a>
+    
+</div>
+      <button class="btn btn-logout btn-logout btn-logout" data-logout onclick="logout()" data-logout>Salir</button>
+    </nav>
+  </div>
+</header>
+  
+
+  
+  
+
+<main class="container wide">
+  <div class="page stack">
+  <h1 class="page-title">Inventario de antibióticos</h1>
+<section class="card">
+      <div class="row">
+        <div>
+          <label for="search">Buscar</label>
+          <input id="search" placeholder="Nombre o código…" disabled />
+        </div>
+        <div>
+          <button id="reload" style="margin-top:18px;" disabled>Recargar</button>
+        </div>
+      </div>
+
+      <div class="muted">
+        Muestra el <b>stock</b> y el <b>stock mínimo</b>. Se marca como <b>BAJO</b> cuando <code>stock ≤ mínimo</code>.
+      </div>
+
+      <div class="nav nav-duplicado">
+        <button type="button" onclick="location.href="/menu.html"">Configuración</button>
+        <button type="button" onclick="location.href='salida.html'">Salida</button>
+        <button type="button" onclick="location.href='stock.html'">Ajuste manual</button>
+      </div>
+
+      <div class="status" id="status">Estado: <span id="statusText">Cargando…</span></div>
+      <div id="tableWrap"></div>
+    </section>
+  </div>
+</main>
+
+  <script>
+    const API = '/api';
+    const search = document.getElementById('search');
+    const reload = document.getElementById('reload');
+    const statusBox = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const tableWrap = document.getElementById('tableWrap');
+
+    let items = [];
+
+    function setStatus(msg, type='neutral') {
+      statusText.textContent = msg;
+      statusBox.classList.remove('ok','bad');
+      if (type==='ok') statusBox.classList.add('ok');
+      if (type==='bad') statusBox.classList.add('bad');
+    }
+
+    async function fetchJson(url) {
+      const r = await fetch(url);
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      if (!r.ok) throw new Error(typeof data === 'string' ? data : (data.error || JSON.stringify(data)));
+      return data;
+    }
+
+    function render() {
+      const q = (search.value || '').trim().toUpperCase();
+      const filtered = items.filter(x => !q || x.codigo.includes(q) || (x.nombre || '').toUpperCase().includes(q));
+
+      const rows = filtered.map(x => {
+        const low = x.cantidad <= x.stock_minimo;
+        return `
+          <tr>
+            <td><span class="pill">${x.codigo}</span></td>
+            <td>${x.nombre}</td>
+            <td>${x.cantidad}</td>
+            <td>${x.stock_minimo}</td>
+            <td>${low ? '<span class="pill low">BAJO</span>' : ''}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Antibiótico</th>
+              <th>Stock</th>
+              <th>Mínimo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="5" class="muted">Sin resultados.</td></tr>'}</tbody>
+        </table>
+      `;
+    }
+
+    async function load() {
+      try {
+        setStatus('Cargando inventario…');
+        const data = await fetchJson(`${API}/antibioticos`);
+        items = Array.isArray(data) ? data : [];
+        search.disabled = false;
+        reload.disabled = false;
+        setStatus(`Listo. ${items.length} antibiótico(s).`, 'ok');
+        render();
+      } catch (e) {
+        console.error(e);
+        setStatus('Error cargando inventario. Revisa /api/dbcheck o logs.', 'bad');
+      }
+    }
+
+    search.addEventListener('input', render);
+    reload.addEventListener('click', load);
+    load();
+  </script>
+
+<script>
+(function() {
+  const role = sessionStorage.getItem('almacen_role');
+  if (!role) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const allowed = ["admin"];
+  if (!allowed.includes(role)) {
+    window.location.href = '/menu.html';
+    return;
+  }
+  if (role !== 'admin') {
+    document.querySelectorAll('.solo-admin').forEach(el => el.style.display='none');
+  }
+})();
+</script>
+
+
+<script>
+function logout() {
+  sessionStorage.removeItem('almacen_user');
+  sessionStorage.removeItem('almacen_role');
+  window.location.href = '/index.html';
+}
+</script>
+  <script src="auth-ui.js"></script>
+</body>
+</html>
